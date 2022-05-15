@@ -1,64 +1,69 @@
-import React from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, Text, View, Button } from 'react-native';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
-import axios from 'axios';
 import { WebView } from "react-native-webview";
-
-const ALARM_TASK = 'alarm-task';
+const io = require('socket.io-client');
+const socketEndpoint = "http://2568-81-227-125-231.ngrok.io";
 
 export default function App() {
-  const [alarmTaskRegistered, setAlarmTaskRegistered] = React.useState(false);
-  const [isAlarming, setIsAlarming] = React.useState(false);
-  const [webviewRef, setWebviewRef] = React.useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [alarmingDevice, setAlarmingDevice] = useState(false);
+  const [webViewRef, setWebViewRef] = useState(null);
+  const socketRef = useRef();
 
-  TaskManager.defineTask(ALARM_TASK, async () => {
-    console.log("Alarm check!");
-    const res = await axios.get('https://pastebin.com/raw/6hNiNX6M');
-    if (!isAlarming && res.data === "alarm") {
-      console.log("Alarm started!");
-      startAlarm();
+  useEffect(() => {
+    if (!isRunning) {
+      return;
     }
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  });
 
-  const startAlarm = () => {
-    webviewRef.injectJavaScript('startAlarm()');
-    setIsAlarming(true);
-  }
-  
-  const stopAlarm = () => {
-    webviewRef.injectJavaScript('stopAlarm()');
-    setIsAlarming(false);
-  }
-
-  const registerBackgroundFetchAsync = async () => {
-    await BackgroundFetch.registerTaskAsync(ALARM_TASK, {
-      minimumInterval: 1,
-      stopOnTerminate: false,
-      startOnBoot: true,
+    socketRef.current = io(socketEndpoint, {
+      transports: ['websocket']
     });
 
-    const isRegistered = await TaskManager.isTaskRegisteredAsync(ALARM_TASK);
+    socketRef.current.on("alarm", ({ id }) => {
+      if (!alarmingDevice) {
+        setAlarmingDevice(id);
+      } else {
+        console.log('alarmingDevice', alarmingDevice);
+        console.log('isRunning', isRunning);
+      }
+    });
 
-    setAlarmTaskRegistered(isRegistered);
-  };
+    return () => {
+      console.log("Disconnecting...");
+      setIsRunning(false);
+      socketRef.current.disconnect();
+    };
+  }, [isRunning]);
 
-  const renderAlarmWebview = () => {
+  React.useEffect(() => {
+    if (!webViewRef) {
+      console.log('webViewRef not initialized');
+      return;
+    }
+
+    console.log("Alarm device", alarmingDevice);
+    if (alarmingDevice) {
+      webViewRef.injectJavaScript('playAlarmSound()');
+    } else {
+      console.log("STOPPING ALARM");
+      webViewRef.injectJavaScript('stopAlarmSound()');
+    }
+  }, [alarmingDevice]);
+
+  function renderAlarmWebview () {
     return (
       <View style={styles.container}>
         <View style={styles.container}>
           <Text style={styles.header}>Larmet är aktivt!</Text>
-          <Text>Stäng ner appen</Text>
-          {isAlarming && (
+          {alarmingDevice && (
             <View style={styles.alarm}>
-              <Text style={styles.alarmHeader}>Det larmar!!</Text>
-              <Button title='Stoppa alarm' onPress={stopAlarm}></Button>
+              <Text style={styles.alarmHeader}>Det larmar på deckare {alarmingDevice}!</Text>
+              <Button title='Kvittera' onPress={() => setAlarmingDevice(null)}></Button>
             </View>
           )}
         </View>
         <WebView
-          ref={setWebviewRef}
+          ref={setWebViewRef}
           style={styles.webView}
           originWhitelist={["*"]}
           mediaPlaybackRequiresUserAction={false}
@@ -66,23 +71,31 @@ export default function App() {
           source={{
             html:
             `
+            <html>
             <body>
               <audio id="beep" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjI1LjEwMQAAAAAAAAAAAAAA/+NAwAAAAAAAAAAAAFhpbmcAAAAPAAAAAwAAA3YAlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaW8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw////////////////////////////////////////////AAAAAExhdmYAAAAAAAAAAAAAAAAAAAAAACQAAAAAAAAAAAN2UrY2LgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/jYMQAEvgiwl9DAAAAO1ALSi19XgYG7wIAAAJOD5R0HygIAmD5+sEHLB94gBAEP8vKAgGP/BwMf+D4Pgh/DAPg+D5//y4f///8QBhMQBgEAfB8HwfAgIAgAHAGCFAj1fYUCZyIbThYFExkefOCo8Y7JxiQ0mGVaHKwwGCtGCUkY9OCugoFQwDKqmHQiUCxRAKOh4MjJFAnTkq6QqFGavRpYUCmMxpZnGXJa0xiJcTGZb1gJjwOJDJgoUJG5QQuDAsypiumkp5TUjrOobR2liwoGBf/X1nChmipnKVtSmMNQDGitG1fT/JhR+gYdCvy36lTrxCVV8Paaz1otLndT2fZuOMp3VpatmVR3LePP/8bSQpmhQZECqWsFeJxoepX9dbfHS13/////aysppUblm//8t7p2Ez7xKD/42DE4E5z9pr/nNkRw6bhdiCAZVVSktxunhxhH//4xF+bn4//6//3jEvylMM2K9XmWSn3ah1L2MqVIjmNlJtpQux1n3ajA0ZnFSu5EpX////uGatn///////1r/pYabq0mKT//TRyTEFNRTMuOTkuNaqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq/+MQxNIAAANIAcAAAKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg==" type="audio/mp3" />
+              <h1>Alarm!</h1>
               <script type="text/javascript">
-                let alarmIval;
+                var beep = document.getElementById('beep');
+                var playSound = false;
 
-                function startAlarm() {
-                  var beep = document.getElementById('beep');
-                  alarmIval = setInterval(() => {
+                setInterval(() => {
+                  if (playSound) {
                     beep.play();
-                  }, 200);
+                  }
+                }, 500);
+
+                function playAlarmSound() {
+                  playSound = true;
                 }
 
-                function stopAlarm() {
-                  clearInterval(alarmIval);
+                function stopAlarmSound() {
+                  playSound = false;
+                  beep.stop();
                 }
               </script>
             </body>
+            </html>
             `,
           }}
         />
@@ -92,9 +105,9 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {alarmTaskRegistered ?
+      {isRunning ?
         renderAlarmWebview() :
-        <Button title='Starta larm' onPress={registerBackgroundFetchAsync}/>
+        <Button title='Starta larm' onPress={setIsRunning(true)}/>
       }
     </View >
   );
