@@ -15,7 +15,7 @@ export default function App() {
   TaskManager.defineTask(ALARM_TASK, async () => {
     console.log("Alarm check!");
     const res = await axios.get('https://pastebin.com/raw/6hNiNX6M');
-    if (res.data === "alarm") {
+    if (!isAlarming && res.data === "alarm") {
       console.log("Alarm started!");
       startAlarm();
     }
